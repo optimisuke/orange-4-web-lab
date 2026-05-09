@@ -1,245 +1,106 @@
-const MEMORY_SIZE = 256;
-const HEX_RE = /^[0-9a-f]$/i;
+import { Gmc4System, assemble, parseHex } from './gmc4.js';
 
-const state = {
-  memory: new Uint8Array(MEMORY_SIZE),
-  pc: 0,
-  a: 0,
-  b: 0,
-  y: 0,
-  z: 0,
-  carry: 0,
+const system = new Gmc4System();
+const runner = {
   running: false,
   timer: null,
-  display: 0,
 };
+
+const keyMap = new Map([
+  ['z', 0x0],
+  ['x', 0x1],
+  ['c', 0x2],
+  ['v', 0x3],
+  ['a', 0x4],
+  ['s', 0x5],
+  ['d', 0x6],
+  ['f', 0x7],
+  ['q', 0x8],
+  ['w', 0x9],
+  ['e', 0xa],
+  ['r', 0xb],
+  ['1', 0xc],
+  ['2', 0xd],
+  ['3', 0xe],
+  ['4', 0xf],
+]);
 
 const sourceInput = document.querySelector('#sourceInput');
 const statusText = document.querySelector('#statusText');
 const pcText = document.querySelector('#pcText');
+const instText = document.querySelector('#instText');
+const soundText = document.querySelector('#soundText');
 const sevenSegment = document.querySelector('#sevenSegment');
 const ledBank = document.querySelector('#ledBank');
 const registerGrid = document.querySelector('#registerGrid');
 const memoryGrid = document.querySelector('#memoryGrid');
+const keyboardGrid = document.querySelector('#keyboardGrid');
+const machineCodeInput = document.querySelector('#machineCodeInput');
 const serialStatus = document.querySelector('#serialStatus');
+const serialLog = document.querySelector('#serialLog');
+const baudRateSelect = document.querySelector('#baudRateSelect');
+const serialFormatSelect = document.querySelector('#serialFormatSelect');
+const lineEndingSelect = document.querySelector('#lineEndingSelect');
+const flashPageSelect = document.querySelector('#flashPageSelect');
+const serialCommandInput = document.querySelector('#serialCommandInput');
+const connectSerialButton = document.querySelector('#connectSerialButton');
+const disconnectSerialButton = document.querySelector('#disconnectSerialButton');
+const sendProgramButton = document.querySelector('#sendProgramButton');
+const sendCommandButton = document.querySelector('#sendCommandButton');
+const saveFlashButton = document.querySelector('#saveFlashButton');
+const runButton = document.querySelector('#runButton');
 
-const opcodes = new Map([
-  ['KA', [0x0]],
-  ['AO', [0x1]],
-  ['CH', [0x2]],
-  ['CY', [0x3]],
-  ['AM', [0x4]],
-  ['MA', [0x5]],
-  ['M+', [0x6]],
-  ['M-', [0x7]],
-  ['TIA', [0x8, 'n']],
-  ['AIA', [0x9, 'n']],
-  ['TIY', [0xa, 'n']],
-  ['AIY', [0xb, 'n']],
-  ['CIA', [0xc, 'n']],
-  ['CIY', [0xd, 'n']],
-  ['CAL', [0xe, 'n']],
-  ['JUMP', [0xf, 'nn']],
-]);
+const serial = {
+  port: null,
+  reader: null,
+  keepReading: false,
+};
+
+let currentProgram = [];
 
 function reset() {
   stop();
-  state.memory.fill(0);
-  state.pc = 0;
-  state.a = 0;
-  state.b = 0;
-  state.y = 0;
-  state.z = 0;
-  state.carry = 0;
-  state.display = 0;
+  system.reset({ clearRam: currentProgram.length === 0 });
   setStatus('Reset');
   render();
 }
 
-function parseHex(input) {
-  const tokens = input
-    .replace(/;.*/g, '')
-    .replace(/:/g, ' ')
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean);
-
-  const bytes = [];
-  for (const token of tokens) {
-    if (token.length === 2 && /^[0-9a-f]{2}$/i.test(token)) {
-      bytes.push(parseInt(token[0], 16), parseInt(token[1], 16));
-    } else if (HEX_RE.test(token)) {
-      bytes.push(parseInt(token, 16));
-    }
-  }
-  return bytes;
-}
-
-function assemble(input) {
-  const bytes = [];
-  const lines = input.split('\n');
-
-  for (const [lineIndex, rawLine] of lines.entries()) {
-    const line = rawLine.replace(/;.*/g, '').trim();
-    if (!line) continue;
-
-    const [mnemonicRaw, operandRaw] = line.split(/\s+/, 2);
-    const mnemonic = mnemonicRaw.toUpperCase();
-    const pattern = opcodes.get(mnemonic);
-    if (!pattern) {
-      throw new Error(`${lineIndex + 1}行目: 未対応命令 ${mnemonic}`);
-    }
-
-    bytes.push(pattern[0]);
-    if (pattern[1] === 'n') {
-      bytes.push(parseNibble(operandRaw, lineIndex));
-    }
-    if (pattern[1] === 'nn') {
-      const value = parseByte(operandRaw, lineIndex);
-      bytes.push((value >> 4) & 0xf, value & 0xf);
-    }
-  }
-
-  return bytes;
-}
-
-function parseNibble(value, lineIndex) {
-  if (!value || !/^[0-9a-f]$/i.test(value)) {
-    throw new Error(`${lineIndex + 1}行目: 4bit値が必要です`);
-  }
-  return parseInt(value, 16);
-}
-
-function parseByte(value, lineIndex) {
-  if (!value || !/^[0-9a-f]{1,2}$/i.test(value)) {
-    throw new Error(`${lineIndex + 1}行目: 8bitアドレスが必要です`);
-  }
-  return parseInt(value, 16);
-}
-
-function loadProgram(bytes) {
-  state.memory.fill(0);
-  bytes.slice(0, MEMORY_SIZE).forEach((byte, index) => {
-    state.memory[index] = byte & 0xf;
-  });
-  state.pc = 0;
-  setStatus(`${bytes.length} nibbles loaded`);
+function loadProgram(bytes, label) {
+  stop();
+  currentProgram = bytes.slice(0, 0x60);
+  system.loadProgram(bytes);
+  setStatus(`${label}: ${bytes.length} nibbles loaded`);
+  renderMachineCode();
   render();
 }
 
-function step() {
-  const opcode = readNibble();
-  switch (opcode) {
-    case 0x0:
-      state.a = 0;
-      break;
-    case 0x1:
-      state.display = state.a;
-      break;
-    case 0x2:
-      [state.a, state.b] = [state.b, state.a];
-      [state.y, state.z] = [state.z, state.y];
-      break;
-    case 0x3:
-      [state.a, state.y] = [state.y, state.a];
-      break;
-    case 0x4:
-      state.memory[state.y] = state.a;
-      break;
-    case 0x5:
-      state.a = state.memory[state.y] & 0xf;
-      break;
-    case 0x6:
-      add(state.memory[state.y]);
-      break;
-    case 0x7:
-      add(-state.memory[state.y]);
-      break;
-    case 0x8:
-      state.a = readNibble();
-      break;
-    case 0x9:
-      add(readNibble());
-      break;
-    case 0xa:
-      state.y = readNibble();
-      break;
-    case 0xb:
-      state.y = (state.y + readNibble()) & 0xf;
-      break;
-    case 0xc:
-      skipIf(state.a !== readNibble());
-      break;
-    case 0xd:
-      skipIf(state.y !== readNibble());
-      break;
-    case 0xe:
-      call(readNibble());
-      break;
-    case 0xf:
-      state.pc = readAddress();
-      break;
-    default:
-      stop();
-      setStatus(`Unknown opcode: ${opcode.toString(16).toUpperCase()}`);
+function stepOnce() {
+  try {
+    system.step();
+    render();
+  } catch (error) {
+    stop();
+    setStatus(error.message);
   }
-  render();
-}
-
-function readNibble() {
-  const value = state.memory[state.pc] & 0xf;
-  state.pc = (state.pc + 1) & 0xff;
-  return value;
-}
-
-function readAddress() {
-  return ((readNibble() << 4) | readNibble()) & 0xff;
-}
-
-function add(value) {
-  const result = state.a + value;
-  state.carry = result < 0 || result > 0xf ? 1 : 0;
-  state.a = result & 0xf;
-}
-
-function skipIf(condition) {
-  if (condition) {
-    state.pc = (state.pc + 1) & 0xff;
-  }
-}
-
-function call(code) {
-  // GMC-4のCAL詳細は実機・資料で詰める。今は表示/LED系だけ仮実装する。
-  if (code === 0x1) {
-    setLed(state.a, true);
-  } else if (code === 0x2) {
-    setLed(state.a, false);
-  } else if (code === 0xc) {
-    state.display = state.a;
-  }
-}
-
-function setLed(index, enabled) {
-  const ledIndex = index % 7;
-  const current = state.memory[0x50] || 0;
-  state.memory[0x50] = enabled ? current | (1 << ledIndex) : current & ~(1 << ledIndex);
 }
 
 function run() {
-  if (state.running) {
+  if (runner.running) {
     stop();
     return;
   }
-  state.running = true;
-  document.querySelector('#runButton').textContent = 'Stop';
-  state.timer = window.setInterval(step, 250);
+  runner.running = true;
+  runButton.textContent = 'Stop Emulator';
+  runner.timer = window.setInterval(() => {
+    for (let i = 0; i < 8; i += 1) stepOnce();
+  }, 120);
 }
 
 function stop() {
-  state.running = false;
-  if (state.timer) window.clearInterval(state.timer);
-  state.timer = null;
-  document.querySelector('#runButton').textContent = 'Run';
+  runner.running = false;
+  if (runner.timer) window.clearInterval(runner.timer);
+  runner.timer = null;
+  runButton.textContent = 'Run Emulator';
 }
 
 async function connectSerial() {
@@ -248,27 +109,191 @@ async function connectSerial() {
     return;
   }
 
-  const port = await navigator.serial.requestPort();
-  serialStatus.textContent = `Serial port selected: ${port.getInfo().usbVendorId ?? 'unknown'}`;
+  serial.port = await navigator.serial.requestPort();
+  await serial.port.open({
+    baudRate: Number.parseInt(baudRateSelect.value, 10),
+    dataBits: 8,
+    stopBits: 1,
+    parity: 'none',
+    flowControl: 'none',
+  });
+
+  const info = serial.port.getInfo();
+  serialStatus.textContent = `Connected: vendor=${info.usbVendorId ?? 'unknown'}, product=${info.usbProductId ?? 'unknown'}`;
+  appendSerialLog('SYS', `connected @ ${baudRateSelect.value}bps`);
+  setSerialConnected(true);
+  readSerialLoop();
+}
+
+async function disconnectSerial() {
+  serial.keepReading = false;
+  if (serial.reader) {
+    await serial.reader.cancel().catch(() => {});
+  }
+  if (serial.port) {
+    await serial.port.close().catch(() => {});
+  }
+  serial.reader = null;
+  serial.port = null;
+  serialStatus.textContent = 'Disconnected';
+  appendSerialLog('SYS', 'disconnected');
+  setSerialConnected(false);
+}
+
+async function readSerialLoop() {
+  const decoder = new TextDecoder();
+  serial.keepReading = true;
+
+  while (serial.port?.readable && serial.keepReading) {
+    serial.reader = serial.port.readable.getReader();
+    try {
+      while (serial.keepReading) {
+        const { value, done } = await serial.reader.read();
+        if (done) break;
+        if (value) appendSerialLog('RX', decoder.decode(value));
+      }
+    } catch (error) {
+      appendSerialLog('ERR', error.message);
+    } finally {
+      serial.reader.releaseLock();
+      serial.reader = null;
+    }
+  }
+}
+
+async function writeSerial(text) {
+  if (!serial.port?.writable) {
+    serialStatus.textContent = 'Serial port is not connected';
+    return;
+  }
+
+  const writer = serial.port.writable.getWriter();
+  try {
+    await writer.write(new TextEncoder().encode(text));
+    appendSerialLog('TX', printable(text));
+  } finally {
+    writer.releaseLock();
+  }
+}
+
+function setSerialConnected(connected) {
+  connectSerialButton.disabled = connected;
+  disconnectSerialButton.disabled = !connected;
+  sendProgramButton.disabled = false;
+  sendCommandButton.disabled = !connected;
+  saveFlashButton.disabled = !connected;
+  document.querySelectorAll('.monitor-command').forEach((button) => {
+    button.disabled = !connected;
+  });
+  baudRateSelect.disabled = connected;
+}
+
+function appendSerialLog(type, message) {
+  const time = new Date().toLocaleTimeString();
+  serialLog.textContent += `[${time}] ${type} ${message}\n`;
+  serialLog.scrollTop = serialLog.scrollHeight;
+}
+
+function printable(text) {
+  return text.replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+}
+
+function lineEnding() {
+  return lineEndingSelect.value.replace('\\r', '\r').replace('\\n', '\n');
+}
+
+function formatProgramForSerial() {
+  const nibbles = parseHex(machineCodeInput.value);
+  currentProgram = nibbles.slice(0, 0x60);
+  if (serialFormatSelect.value === 'spaced') {
+    return nibbles.map((value) => value.toString(16).toUpperCase()).join(' ');
+  }
+  const compact = nibbles.map((value) => value.toString(16).toUpperCase()).join('');
+  if (serialFormatSelect.value === 'monitor') {
+    return `e00:${compact}`;
+  }
+  return compact;
+}
+
+function renderMachineCode() {
+  if (currentProgram.length === 0) {
+    machineCodeInput.value = '';
+    return;
+  }
+  machineCodeInput.value = currentProgram.map((value) => value.toString(16).toUpperCase()).join(' ');
 }
 
 function render() {
-  pcText.textContent = `PC: ${hex2(state.pc)}`;
-  sevenSegment.textContent = state.display.toString(16).toUpperCase();
+  const snapshot = system.snapshot();
+  pcText.textContent = `PC: ${hex2(snapshot.pc)}`;
+  instText.textContent = `INST: ${snapshot.inst.toString(16).toUpperCase()}`;
+  soundText.textContent = snapshot.lastSound ? `SOUND: ${snapshot.lastSound}` : 'SOUND: -';
 
-  registerGrid.innerHTML = ['a', 'b', 'y', 'z', 'carry']
-    .map((key) => `<div class="register"><span>${key.toUpperCase()}</span>${state[key].toString(16).toUpperCase()}</div>`)
+  sevenSegment.innerHTML = Array.from(snapshot.segments)
+    .map((enabled, index) => `<span class="seg seg-${index}${enabled ? ' on' : ''}"></span>`)
     .join('');
 
-  memoryGrid.innerHTML = Array.from({ length: 64 }, (_, index) => {
-    const active = index === state.pc ? ' active' : '';
-    return `<div class="memory-cell${active}" title="${hex2(index)}">${state.memory[index].toString(16).toUpperCase()}</div>`;
+  ledBank.innerHTML = Array.from(snapshot.led, (enabled, index) => {
+    return `<span class="led${enabled ? ' on' : ''}" title="LED ${index}"></span>`;
   }).join('');
 
-  ledBank.innerHTML = Array.from({ length: 7 }, (_, index) => {
-    const on = state.memory[0x50] & (1 << index) ? ' on' : '';
-    return `<span class="led${on}" title="LED ${index}"></span>`;
+  const registers = [
+    ['A', snapshot.a],
+    ['B', snapshot.b],
+    ['Y', snapshot.y],
+    ['Z', snapshot.z],
+    ["A'", snapshot.ap],
+    ["B'", snapshot.bp],
+    ["Y'", snapshot.yp],
+    ["Z'", snapshot.zp],
+    ['F', snapshot.flag],
+    ['KEY', snapshot.keyFlag ? snapshot.key : '-'],
+  ];
+
+  registerGrid.innerHTML = registers
+    .map(([label, value]) => `<div class="register"><span>${label}</span>${formatRegister(value)}</div>`)
+    .join('');
+
+  memoryGrid.innerHTML = Array.from({ length: 0x60 }, (_, index) => {
+    const active = index === snapshot.pc ? ' active' : '';
+    const data = snapshot.ram[index].toString(16).toUpperCase();
+    return `<div class="memory-cell${active}" title="${hex2(index)}">${data}</div>`;
   }).join('');
+
+  keyboardGrid.querySelectorAll('button').forEach((button) => {
+    const value = Number.parseInt(button.dataset.keyValue, 16);
+    button.classList.toggle('active', snapshot.keyFlag && snapshot.key === value);
+  });
+}
+
+function buildKeyboard() {
+  const labels = [
+    ['C', 'D', 'E', 'F'],
+    ['8', '9', 'A', 'B'],
+    ['4', '5', '6', '7'],
+    ['0', '1', '2', '3'],
+  ];
+
+  keyboardGrid.innerHTML = labels
+    .flat()
+    .map((label) => `<button type="button" data-key-value="${label}">${label}</button>`)
+    .join('');
+
+  keyboardGrid.addEventListener('pointerdown', (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    system.pressKey(Number.parseInt(button.dataset.keyValue, 16));
+    render();
+  });
+
+  keyboardGrid.addEventListener('pointerup', () => {
+    system.releaseKey();
+    render();
+  });
+}
+
+function formatRegister(value) {
+  return typeof value === 'number' ? value.toString(16).toUpperCase() : value;
 }
 
 function hex2(value) {
@@ -281,23 +306,78 @@ function setStatus(message) {
 
 document.querySelector('#assembleButton').addEventListener('click', () => {
   try {
-    loadProgram(assemble(sourceInput.value));
+    currentProgram = assemble(sourceInput.value).slice(0, 0x60);
+    renderMachineCode();
+    setStatus(`Assembly: ${currentProgram.length} nibbles ready`);
   } catch (error) {
     setStatus(error.message);
   }
 });
 
-document.querySelector('#loadHexButton').addEventListener('click', () => {
-  loadProgram(parseHex(sourceInput.value));
+document.querySelector('#loadMachineCodeButton').addEventListener('click', () => {
+  loadProgram(parseHex(machineCodeInput.value), 'Machine Code');
 });
 
-document.querySelector('#stepButton').addEventListener('click', step);
+document.querySelector('#stepButton').addEventListener('click', stepOnce);
 document.querySelector('#runButton').addEventListener('click', run);
 document.querySelector('#resetButton').addEventListener('click', reset);
-document.querySelector('#connectSerialButton').addEventListener('click', () => {
+connectSerialButton.addEventListener('click', () => {
   connectSerial().catch((error) => {
     serialStatus.textContent = error.message;
+    appendSerialLog('ERR', error.message);
   });
 });
+disconnectSerialButton.addEventListener('click', () => {
+  disconnectSerial().catch((error) => appendSerialLog('ERR', error.message));
+});
+sendProgramButton.addEventListener('click', () => {
+  sendMachineCodeToHardware().catch((error) => appendSerialLog('ERR', error.message));
+});
+sendCommandButton.addEventListener('click', () => {
+  writeSerial(`${serialCommandInput.value}${lineEnding()}`).catch((error) => appendSerialLog('ERR', error.message));
+  serialCommandInput.value = '';
+});
+saveFlashButton.addEventListener('click', () => {
+  writeSerial(`w${flashPageSelect.value}${lineEnding()}`).catch((error) => appendSerialLog('ERR', error.message));
+});
+document.querySelectorAll('.monitor-command').forEach((button) => {
+  button.addEventListener('click', () => {
+    writeSerial(`${button.dataset.command}${lineEnding()}`).catch((error) => appendSerialLog('ERR', error.message));
+  });
+});
+serialCommandInput.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  sendCommandButton.click();
+});
+document.querySelector('#clearSerialLogButton').addEventListener('click', () => {
+  serialLog.textContent = '';
+});
 
+window.addEventListener('keydown', (event) => {
+  const key = event.key.toLowerCase();
+  if (!keyMap.has(key) || event.target === sourceInput || event.target === machineCodeInput) return;
+  event.preventDefault();
+  system.pressKey(keyMap.get(key));
+  render();
+});
+
+window.addEventListener('keyup', (event) => {
+  if (!keyMap.has(event.key.toLowerCase())) return;
+  system.releaseKey();
+  render();
+});
+
+system.addEventListener('sound', (event) => {
+  setStatus(`Sound: ${event.detail}`);
+});
+
+buildKeyboard();
+setSerialConnected(false);
 reset();
+
+async function sendMachineCodeToHardware() {
+  if (!serial.port?.writable) {
+    await connectSerial();
+  }
+  await writeSerial(`${formatProgramForSerial()}${lineEnding()}`);
+}

@@ -13,50 +13,157 @@
           <p class="eyebrow">GMC-4 compatible</p>
           <h1>ORANGE-4 Web Lab</h1>
         </div>
-        <div class="run-controls" aria-label="実行操作">
-          <button id="assembleButton" type="button">Assemble</button>
-          <button id="loadHexButton" type="button">Load HEX</button>
-          <button id="stepButton" type="button">Step</button>
-          <button id="runButton" type="button">Run</button>
-          <button id="resetButton" type="button">Reset</button>
-        </div>
       </header>
 
       <section class="workspace">
         <section class="panel editor-panel" aria-labelledby="sourceTitle">
           <div class="panel-header">
             <h2 id="sourceTitle">Source</h2>
-            <span id="statusText" class="status">Ready</span>
+            <div class="source-actions">
+              <button id="assembleButton" type="button">Assemble to Machine Code</button>
+            </div>
           </div>
-          <textarea id="sourceInput" spellcheck="false">; ORANGE-4 / GMC-4 sample
-TIA 1
+          <textarea id="sourceInput" spellcheck="false">; LED 0-6 を順番に点灯
+TIY 0
+CAL 1
+AIY 1
+CIY 7
+JUMP 02
+TIA 9
 AO
-JUMP 00</textarea>
-          <div class="hint">Assembly または HEX を入力。HEX例: <code>8 1 1 F 0 0</code></div>
+JUMP 0B</textarea>
+          <div class="hint">Assemblyだけを入力します。HEXを直接書く場合は下のMachine Code欄を使います。</div>
+          <div class="program-preview">
+            <div class="preview-header">
+              <div class="subhead">Machine Code</div>
+              <span id="statusText" class="status">Ready</span>
+            </div>
+            <textarea id="machineCodeInput" class="machine-code-input" spellcheck="false" aria-label="Machine Code"></textarea>
+            <div class="hint">HEX nibble列を編集できます。例: <code>8 9 1 F 0 0</code>。</div>
+            <div class="destination-grid" aria-label="Machine Code destinations">
+              <section class="destination-card destination-emulator">
+                <div>
+                  <div class="destination-title">Browser Emulator</div>
+                  <p>Machine Codeをこの画面のMachine RAMへ読み込みます。</p>
+                </div>
+                <button id="loadMachineCodeButton" type="button">Load to Emulator RAM</button>
+              </section>
+              <section class="destination-card destination-hardware">
+                <div>
+                  <div class="destination-title">ORANGE-4 Hardware</div>
+                  <p id="serialStatus">Machine CodeをSerial Monitor経由で実機へ送ります。未接続なら送信時にポート選択から始めます。</p>
+                </div>
+                <div class="hardware-settings">
+                  <label>
+                    Baud
+                    <select id="baudRateSelect">
+                      <option value="115200" selected>115200</option>
+                      <option value="57600">57600</option>
+                      <option value="38400">38400</option>
+                      <option value="19200">19200</option>
+                      <option value="9600">9600</option>
+                    </select>
+                  </label>
+                  <label>
+                    Format
+                    <select id="serialFormatSelect">
+                      <option value="monitor" selected>Monitor e00:</option>
+                      <option value="compact">HEX compact</option>
+                      <option value="spaced">HEX spaced</option>
+                    </select>
+                  </label>
+                  <label>
+                    Line End
+                    <select id="lineEndingSelect">
+                      <option value="\r" selected>CR</option>
+                      <option value="\n">LF</option>
+                      <option value="\r\n">CRLF</option>
+                      <option value="">None</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="hardware-actions">
+                  <button id="connectSerialButton" type="button">Connect</button>
+                  <button id="disconnectSerialButton" type="button" disabled>Disconnect</button>
+                </div>
+                <button id="sendProgramButton" type="button" disabled>Send to ORANGE-4</button>
+              </section>
+            </div>
+          </div>
         </section>
 
         <section class="panel machine-panel" aria-labelledby="machineTitle">
           <div class="panel-header">
-            <h2 id="machineTitle">Machine</h2>
+            <div>
+              <h2 id="machineTitle">Browser Emulator</h2>
+              <p class="panel-note">Machine Codeを読み込んだ後、この画面内のGMC-4互換CPUを操作します。</p>
+            </div>
+            <div class="machine-actions">
+              <button id="stepButton" type="button" title="次の1命令だけ実行します">Step 1 Instruction</button>
+              <button id="runButton" type="button" title="連続実行します">Run Emulator</button>
+              <button id="resetButton" type="button" title="CPU状態を初期化します。RAMのプログラムは残ります">Reset Emulator</button>
+            </div>
+          </div>
+
+          <div class="machine-meta">
             <output id="pcText">PC: 00</output>
+            <output id="instText">INST: 0</output>
+            <output id="soundText">SOUND: -</output>
           </div>
 
           <div class="display-row">
-            <div class="seven-seg" id="sevenSegment" aria-label="7セグ表示">0</div>
-            <div class="led-bank" id="ledBank" aria-label="LED表示"></div>
+            <section class="io-block">
+              <div class="io-label">7-Segment</div>
+              <div class="seven-seg" id="sevenSegment" aria-label="7セグ表示"></div>
+            </section>
+            <div>
+              <div class="io-label">LED 0-6</div>
+              <div class="led-bank" id="ledBank" aria-label="LED表示"></div>
+              <div class="io-label keyboard-label">Hex Keypad</div>
+              <div class="keyboard-grid" id="keyboardGrid" aria-label="16進キーボード"></div>
+            </div>
           </div>
 
+          <div class="io-label">Registers</div>
           <div class="register-grid" id="registerGrid"></div>
+          <div class="io-label">Emulator RAM 00-5F</div>
           <div class="memory-grid" id="memoryGrid" aria-label="メモリ"></div>
         </section>
       </section>
 
       <section class="panel serial-panel" aria-labelledby="serialTitle">
         <div class="panel-header">
-          <h2 id="serialTitle">Write</h2>
-          <button id="connectSerialButton" type="button">Connect Serial</button>
+          <div>
+            <h2 id="serialTitle">Serial Monitor</h2>
+            <p>接続後にORANGE-4モニターの応答確認、RAMダンプ、実機実行、フラッシュ保存を行います。</p>
+          </div>
         </div>
-        <p id="serialStatus">Web Serial API の接続口だけ先に用意しています。転送プロトコルは実機確認後に実装します。</p>
+
+        <div class="monitor-grid">
+          <button class="monitor-command" type="button" data-command="x" disabled>Status</button>
+          <button class="monitor-command" type="button" data-command="d" disabled>Dump RAM</button>
+          <button class="monitor-command" type="button" data-command="l00" disabled>List 00</button>
+          <button class="monitor-command" type="button" data-command="0" disabled>Reset PC/SP</button>
+          <button class="monitor-command" type="button" data-command="g" disabled>Run HW</button>
+          <label>
+            Flash Page
+            <select id="flashPageSelect">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </label>
+          <button id="saveFlashButton" type="button" disabled>Save Flash</button>
+        </div>
+
+        <div class="manual-send">
+          <input id="serialCommandInput" type="text" placeholder="manual command" autocomplete="off" />
+          <button id="sendCommandButton" type="button" disabled>Send</button>
+          <button id="clearSerialLogButton" type="button">Clear Log</button>
+        </div>
+
+        <pre id="serialLog" class="serial-log" aria-label="Serial log"></pre>
       </section>
     </main>
 

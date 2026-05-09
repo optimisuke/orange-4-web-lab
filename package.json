@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "python3 -m http.server 5173",
-    "check": "node --check src/app.js"
+    "check": "node --check src/app.js && node --check src/gmc4.js && node --check test/gmc4.test.js",
+    "test": "node --test"
   }
 }
