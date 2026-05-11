@@ -1,4 +1,5 @@
 :root {
+  --control-width: 260px;
   color-scheme: light;
   --bg: #f4f6f8;
   --panel: #ffffff;
@@ -141,17 +142,14 @@ textarea {
   margin-top: 10px;
 }
 
-.source-actions,
-.machine-actions {
+.assemble-row {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: end;
-  gap: 8px;
+  justify-content: center;
+  margin: 8px 0;
 }
 
-.source-actions button,
-.machine-actions button {
-  min-width: 88px;
+.assemble-row button {
+  min-width: 160px;
 }
 
 .program-preview {
@@ -197,7 +195,7 @@ textarea {
 
 .destination-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
   margin-top: 12px;
 }
@@ -258,12 +256,27 @@ textarea {
   gap: 8px;
 }
 
+.cpu-io-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.cpu-debug-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 14px;
+  margin-top: 4px;
+}
+
 .display-row {
   display: grid;
   grid-template-columns: 132px 1fr;
   gap: 16px;
   align-items: start;
-  margin-bottom: 16px;
 }
 
 .io-label {
@@ -274,9 +287,6 @@ textarea {
   text-transform: uppercase;
 }
 
-.keyboard-label {
-  margin-top: 18px;
-}
 
 .io-block {
   margin: 0;
@@ -359,14 +369,13 @@ textarea {
 
 .led-bank {
   display: grid;
-  grid-template-columns: repeat(7, 34px);
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  width: var(--control-width);
 }
 
 .led {
-  width: 34px;
-  height: 34px;
+  aspect-ratio: 1;
   border-radius: 50%;
   background: var(--off);
   border: 1px solid #b8c0c8;
@@ -374,18 +383,100 @@ textarea {
 
 .led.on {
   background: var(--green);
-  box-shadow: 0 0 14px rgba(45, 138, 75, 0.5);
+  box-shadow: 0 0 12px rgba(45, 138, 75, 0.55);
+}
+
+.control-cluster {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+  width: var(--control-width);
 }
 
 .keyboard-grid {
+  flex: 1;
   display: grid;
-  grid-template-columns: repeat(4, 44px);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  margin-top: 18px;
+}
+
+.hw-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hw-btn {
+  width: 44px;
+  height: 38px;
+  min-height: 38px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.hw-btn.adr-active {
+  border-color: var(--blue);
+  background: #e8f0fb;
+}
+
+.control-cluster.write-mode .keyboard-grid button {
+  border-color: var(--blue);
+  background: #f0f4fd;
+}
+
+.control-cluster.write-mode .keyboard-grid button:hover {
+  border-color: var(--blue);
+  background: #dde8f8;
+}
+
+.hw-btn.running {
+  border-color: var(--green);
+  background: #e8f5ec;
+}
+
+.buzzer-title {
+  margin-top: 14px;
+}
+
+.buzzer-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.buzzer {
+  width: 42px;
+  height: 24px;
+  border-radius: 6px;
+  background: #2c3136;
+  border: 2px solid #444c55;
+  flex-shrink: 0;
+  transition: background 0.08s, box-shadow 0.08s;
+}
+
+.buzzer.on {
+  background: #ff9500;
+  border-color: #cc7700;
+  box-shadow: 0 0 14px rgba(255, 149, 0, 0.65);
+  animation: buzz-pulse 0.18s ease-in-out;
+}
+
+@keyframes buzz-pulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+.buzzer-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .keyboard-grid button {
-  width: 44px;
+  width: 100%;
   height: 38px;
   min-height: 38px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -404,7 +495,7 @@ textarea {
   margin-bottom: 12px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fbfcfd;
+  background: #fff;
   padding: 8px 10px;
 }
 
@@ -451,6 +542,145 @@ textarea {
 .memory-cell.active {
   border-color: var(--accent);
   background: #fff1e8;
+}
+
+.accordion {
+  margin-top: 10px;
+}
+
+.accordion-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.accordion-summary::before {
+  content: '▶';
+  font-size: 9px;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+details[open] > .accordion-summary::before {
+  transform: rotate(90deg);
+}
+
+.cpu-debug-accordion {
+  margin-top: 12px;
+}
+
+.source-samples {
+  margin-top: 8px;
+}
+
+.examples-hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.examples-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.example-card {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+  min-height: auto;
+}
+
+.example-card:hover {
+  border-color: var(--accent);
+  background: #fff8f4;
+}
+
+.example-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.example-desc {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.keypad-guide-section {
+  margin-top: 16px;
+}
+
+.guide-steps {
+  margin: 6px 0 12px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 2;
+  color: var(--text);
+}
+
+.guide-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guide-example {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.guide-example-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.guide-key-seq {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+}
+
+.guide-key-seq span {
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 1px;
+}
+
+kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid #b8c0c8;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #f4f6f8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text);
+  white-space: nowrap;
 }
 
 .serial-panel {
@@ -524,11 +754,7 @@ textarea {
   }
 
   .display-row {
-    grid-template-columns: 1fr;
-  }
-
-  .seven-seg {
-    width: 132px;
+    grid-template-columns: 132px 1fr;
   }
 
   .memory-grid {

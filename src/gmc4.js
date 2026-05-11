@@ -297,7 +297,7 @@ export class Gmc4System extends EventTarget {
     const address = 0x50 + this.y;
     const result = this.read(address) + this.a;
     this.write(address, result % 10);
-    if (result & 0x10) {
+    if (result >= 10) {
       const carryAddress = 0x50 + ((this.y - 1) & 0xf);
       this.write(carryAddress, this.read(carryAddress) + 1);
     }

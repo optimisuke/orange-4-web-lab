@@ -19,9 +19,6 @@
         <section class="panel editor-panel" aria-labelledby="sourceTitle">
           <div class="panel-header">
             <h2 id="sourceTitle">Source</h2>
-            <div class="source-actions">
-              <button id="assembleButton" type="button">Assemble to Machine Code</button>
-            </div>
           </div>
           <textarea id="sourceInput" spellcheck="false">; LED 0-6 を順番に点灯
 TIY 0
@@ -32,21 +29,30 @@ JUMP 02
 TIA 9
 AO
 JUMP 0B</textarea>
-          <div class="hint">Assemblyだけを入力します。HEXを直接書く場合は下のMachine Code欄を使います。</div>
+          <details class="accordion">
+            <summary class="accordion-summary">サンプル</summary>
+            <div class="source-samples">
+              <p class="examples-hint">クリックでソースに読み込む</p>
+              <div class="examples-grid" id="examplesGrid"></div>
+            </div>
+          </details>
+          <div class="assemble-row">
+            <button id="assembleButton" type="button">↓ Assemble</button>
+          </div>
           <div class="program-preview">
             <div class="preview-header">
               <div class="subhead">Machine Code</div>
               <span id="statusText" class="status">Ready</span>
             </div>
             <textarea id="machineCodeInput" class="machine-code-input" spellcheck="false" aria-label="Machine Code"></textarea>
-            <div class="hint">HEX nibble列を編集できます。例: <code>8 9 1 F 0 0</code>。</div>
+            <div class="hint">HEX を直接編集できます。例: <code>8 9 1 F 0 0</code></div>
             <div class="destination-grid" aria-label="Machine Code destinations">
               <section class="destination-card destination-emulator">
                 <div>
-                  <div class="destination-title">Browser Emulator</div>
+                  <div class="destination-title">Browser</div>
                   <p>Machine Codeをこの画面のMachine RAMへ読み込みます。</p>
                 </div>
-                <button id="loadMachineCodeButton" type="button">Load to Emulator RAM</button>
+                <button id="loadMachineCodeButton" type="button">Load to RAM</button>
               </section>
               <section class="destination-card destination-hardware">
                 <div>
@@ -94,40 +100,75 @@ JUMP 0B</textarea>
 
         <section class="panel machine-panel" aria-labelledby="machineTitle">
           <div class="panel-header">
-            <div>
-              <h2 id="machineTitle">Browser Emulator</h2>
-              <p class="panel-note">Machine Codeを読み込んだ後、この画面内のGMC-4互換CPUを操作します。</p>
-            </div>
-            <div class="machine-actions">
-              <button id="stepButton" type="button" title="次の1命令だけ実行します">Step 1 Instruction</button>
-              <button id="runButton" type="button" title="連続実行します">Run Emulator</button>
-              <button id="resetButton" type="button" title="CPU状態を初期化します。RAMのプログラムは残ります">Reset Emulator</button>
+            <h2 id="machineTitle">CPU</h2>
+          </div>
+
+          <div class="cpu-io-section">
+            <div class="display-row">
+              <section class="io-block">
+                <div class="io-label">7-Segment</div>
+                <div class="seven-seg" id="sevenSegment" aria-label="7セグ表示"></div>
+                <div class="io-label buzzer-title">Buzzer</div>
+                <div class="buzzer-wrap">
+                  <div class="buzzer" id="buzzer" aria-label="ブザー"></div>
+                  <span class="buzzer-label" id="buzzerLabel">-</span>
+                </div>
+              </section>
+              <section class="io-block">
+                <div class="io-label">LED 0-6</div>
+                <div class="led-bank" id="ledBank" aria-label="LED表示"></div>
+                <div class="io-label" style="margin-top:12px">Hex Keypad</div>
+                <div class="control-cluster">
+                  <div class="keyboard-grid" id="keyboardGrid" aria-label="16進キーボード"></div>
+                  <div class="hw-buttons">
+                    <button id="hwAdrButton" type="button" class="hw-btn" title="アドレス設定：続けてキーパッドで2桁入力">ADR</button>
+                    <button id="hwIncButton" type="button" class="hw-btn" title="1命令実行">INC</button>
+                    <button id="hwRunButton" type="button" class="hw-btn" title="連続実行 / 停止">RUN</button>
+                    <button id="hwRstButton" type="button" class="hw-btn" title="リセット">RST</button>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
 
-          <div class="machine-meta">
-            <output id="pcText">PC: 00</output>
-            <output id="instText">INST: 0</output>
-            <output id="soundText">SOUND: -</output>
-          </div>
+          <details class="accordion cpu-debug-accordion">
+            <summary class="accordion-summary">レジスタ / RAM</summary>
+            <div class="cpu-debug-section">
+              <div class="machine-meta">
+                <output id="pcText">PC: 00</output>
+                <output id="instText">INST: 0</output>
+              </div>
+              <div class="io-label">Registers</div>
+              <div class="register-grid" id="registerGrid"></div>
+              <div class="io-label">RAM 00-5F</div>
+              <div class="memory-grid" id="memoryGrid" aria-label="メモリ"></div>
+            </div>
+          </details>
 
-          <div class="display-row">
-            <section class="io-block">
-              <div class="io-label">7-Segment</div>
-              <div class="seven-seg" id="sevenSegment" aria-label="7セグ表示"></div>
-            </section>
-            <div>
-              <div class="io-label">LED 0-6</div>
-              <div class="led-bank" id="ledBank" aria-label="LED表示"></div>
-              <div class="io-label keyboard-label">Hex Keypad</div>
-              <div class="keyboard-grid" id="keyboardGrid" aria-label="16進キーボード"></div>
+          <div class="keypad-guide-section">
+            <div class="io-label">キーパッドでプログラミング</div>
+            <ol class="guide-steps">
+              <li><kbd>RST</kbd> リセット</li>
+              <li><kbd>ADR</kbd> → キーパッドで2桁入力してアドレスを指定</li>
+              <li>キーパッドで1桁ずつ入力 → RAM に書き込み、次のアドレスへ自動移動</li>
+              <li><kbd>INC</kbd> 書き込まずに次のアドレスへ移動</li>
+              <li><kbd>RUN</kbd> 実行</li>
+            </ol>
+            <div class="guide-examples">
+              <div class="guide-example">
+                <div class="guide-example-title">7セグに "9" を表示</div>
+                <div class="guide-key-seq">
+                  <kbd>RST</kbd><span>→</span><kbd>ADR</kbd><span>→</span><kbd>0</kbd><kbd>0</kbd><span>→</span><kbd>8</kbd><kbd>9</kbd><kbd>1</kbd><kbd>F</kbd><kbd>0</kbd><kbd>2</kbd><span>→</span><kbd>RUN</kbd>
+                </div>
+              </div>
+              <div class="guide-example">
+                <div class="guide-example-title">LED 0 を点灯してループ</div>
+                <div class="guide-key-seq">
+                  <kbd>RST</kbd><span>→</span><kbd>ADR</kbd><span>→</span><kbd>0</kbd><kbd>0</kbd><span>→</span><kbd>A</kbd><kbd>0</kbd><kbd>E</kbd><kbd>1</kbd><kbd>F</kbd><kbd>0</kbd><kbd>2</kbd><span>→</span><kbd>RUN</kbd>
+                </div>
+              </div>
             </div>
           </div>
-
-          <div class="io-label">Registers</div>
-          <div class="register-grid" id="registerGrid"></div>
-          <div class="io-label">Emulator RAM 00-5F</div>
-          <div class="memory-grid" id="memoryGrid" aria-label="メモリ"></div>
         </section>
       </section>
 

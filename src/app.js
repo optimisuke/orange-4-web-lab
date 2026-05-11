@@ -29,9 +29,10 @@ const sourceInput = document.querySelector('#sourceInput');
 const statusText = document.querySelector('#statusText');
 const pcText = document.querySelector('#pcText');
 const instText = document.querySelector('#instText');
-const soundText = document.querySelector('#soundText');
 const sevenSegment = document.querySelector('#sevenSegment');
 const ledBank = document.querySelector('#ledBank');
+const buzzerEl = document.querySelector('#buzzer');
+const buzzerLabel = document.querySelector('#buzzerLabel');
 const registerGrid = document.querySelector('#registerGrid');
 const memoryGrid = document.querySelector('#memoryGrid');
 const keyboardGrid = document.querySelector('#keyboardGrid');
@@ -48,7 +49,10 @@ const disconnectSerialButton = document.querySelector('#disconnectSerialButton')
 const sendProgramButton = document.querySelector('#sendProgramButton');
 const sendCommandButton = document.querySelector('#sendCommandButton');
 const saveFlashButton = document.querySelector('#saveFlashButton');
-const runButton = document.querySelector('#runButton');
+const hwAdrButton = document.querySelector('#hwAdrButton');
+const hwIncButton = document.querySelector('#hwIncButton');
+const hwRunButton = document.querySelector('#hwRunButton');
+const hwRstButton = document.querySelector('#hwRstButton');
 
 const serial = {
   port: null,
@@ -56,10 +60,74 @@ const serial = {
   keepReading: false,
 };
 
+const hwMode = {
+  mode: 'normal', // 'normal' | 'adr' | 'write'
+  adrNibbles: [],
+};
+let buzzerTimeout = null;
+let audioCtx = null;
+
+const NOTE_FREQS = [262, 294, 330, 349, 392, 440, 494, 523, 587, 659, 698, 784, 880, 988, 1047, 1175];
+
+function getAudioContext() {
+  if (!audioCtx) audioCtx = new AudioContext();
+  return audioCtx;
+}
+
+function playTone(frequency, duration, type = 'square') {
+  try {
+    const ctx = getAudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = type;
+    osc.frequency.value = frequency;
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  } catch {}
+}
+
+function playBuzzerSound(soundType) {
+  if (soundType === 'short') {
+    playTone(880, 0.1);
+  } else if (soundType === 'long') {
+    playTone(880, 0.5);
+  } else if (soundType === 'end') {
+    playTone(523, 0.15);
+    setTimeout(() => playTone(659, 0.15), 160);
+    setTimeout(() => playTone(784, 0.25), 320);
+  } else if (soundType === 'error') {
+    playTone(220, 0.3, 'sawtooth');
+  } else if (soundType.startsWith('note ')) {
+    const idx = Number.parseInt(soundType.slice(5), 16);
+    playTone(NOTE_FREQS[idx] ?? 440, 0.25);
+  }
+}
+
+function flashBuzzer(soundType) {
+  buzzerEl.classList.remove('on');
+  void buzzerEl.offsetWidth;
+  buzzerEl.classList.add('on');
+  buzzerLabel.textContent = soundType;
+  clearTimeout(buzzerTimeout);
+  buzzerTimeout = setTimeout(() => buzzerEl.classList.remove('on'), 500);
+}
+
 let currentProgram = [];
+
+function exitHwMode() {
+  hwMode.mode = 'normal';
+  hwMode.adrNibbles = [];
+  hwAdrButton.classList.remove('adr-active');
+  document.querySelector('.control-cluster').classList.remove('write-mode');
+}
 
 function reset() {
   stop();
+  exitHwMode();
   system.reset({ clearRam: currentProgram.length === 0 });
   setStatus('Reset');
   render();
@@ -89,8 +157,9 @@ function run() {
     stop();
     return;
   }
+  exitHwMode();
   runner.running = true;
-  runButton.textContent = 'Stop Emulator';
+  hwRunButton.classList.add('running');
   runner.timer = window.setInterval(() => {
     for (let i = 0; i < 8; i += 1) stepOnce();
   }, 120);
@@ -98,9 +167,9 @@ function run() {
 
 function stop() {
   runner.running = false;
+  hwRunButton.classList.remove('running');
   if (runner.timer) window.clearInterval(runner.timer);
   runner.timer = null;
-  runButton.textContent = 'Run Emulator';
 }
 
 async function connectSerial() {
@@ -227,7 +296,6 @@ function render() {
   const snapshot = system.snapshot();
   pcText.textContent = `PC: ${hex2(snapshot.pc)}`;
   instText.textContent = `INST: ${snapshot.inst.toString(16).toUpperCase()}`;
-  soundText.textContent = snapshot.lastSound ? `SOUND: ${snapshot.lastSound}` : 'SOUND: -';
 
   sevenSegment.innerHTML = Array.from(snapshot.segments)
     .map((enabled, index) => `<span class="seg seg-${index}${enabled ? ' on' : ''}"></span>`)
@@ -282,7 +350,32 @@ function buildKeyboard() {
   keyboardGrid.addEventListener('pointerdown', (event) => {
     const button = event.target.closest('button');
     if (!button) return;
-    system.pressKey(Number.parseInt(button.dataset.keyValue, 16));
+    const value = Number.parseInt(button.dataset.keyValue, 16);
+
+    if (hwMode.mode === 'adr') {
+      hwMode.adrNibbles.push(value);
+      setStatus(`ADR: ${hwMode.adrNibbles.map((n) => n.toString(16).toUpperCase()).join('')}_`);
+      if (hwMode.adrNibbles.length === 2) {
+        system.pc = ((hwMode.adrNibbles[0] << 4) | hwMode.adrNibbles[1]) & 0xff;
+        hwMode.adrNibbles = [];
+        hwMode.mode = 'write';
+        document.querySelector('.control-cluster').classList.add('write-mode');
+        setStatus(`PC: ${hex2(system.pc)} — キーパッドで書き込み / INC で移動`);
+        render();
+      }
+      return;
+    }
+
+    if (hwMode.mode === 'write') {
+      const addr = system.pc;
+      system.write(addr, value);
+      system.pc = (addr + 1) & 0xff;
+      setStatus(`[${hex2(addr)}] ← ${value.toString(16).toUpperCase()}  PC: ${hex2(system.pc)}`);
+      render();
+      return;
+    }
+
+    system.pressKey(value);
     render();
   });
 
@@ -318,9 +411,31 @@ document.querySelector('#loadMachineCodeButton').addEventListener('click', () =>
   loadProgram(parseHex(machineCodeInput.value), 'Machine Code');
 });
 
-document.querySelector('#stepButton').addEventListener('click', stepOnce);
-document.querySelector('#runButton').addEventListener('click', run);
-document.querySelector('#resetButton').addEventListener('click', reset);
+hwAdrButton.addEventListener('click', () => {
+  if (hwMode.mode !== 'normal') {
+    exitHwMode();
+    setStatus('Ready');
+    return;
+  }
+  stop();
+  hwMode.mode = 'adr';
+  hwMode.adrNibbles = [];
+  hwAdrButton.classList.add('adr-active');
+  setStatus('ADR: キーパッドでアドレスを2桁入力');
+});
+
+hwIncButton.addEventListener('click', () => {
+  if (hwMode.mode === 'write') {
+    system.pc = (system.pc + 1) & 0xff;
+    setStatus(`PC: ${hex2(system.pc)}  [${system.ram[system.pc]?.toString(16).toUpperCase() ?? '0'}]`);
+    render();
+  } else {
+    stepOnce();
+  }
+});
+
+hwRunButton.addEventListener('click', run);
+hwRstButton.addEventListener('click', reset);
 connectSerialButton.addEventListener('click', () => {
   connectSerial().catch((error) => {
     serialStatus.textContent = error.message;
@@ -356,6 +471,7 @@ document.querySelector('#clearSerialLogButton').addEventListener('click', () => 
 window.addEventListener('keydown', (event) => {
   const key = event.key.toLowerCase();
   if (!keyMap.has(key) || event.target === sourceInput || event.target === machineCodeInput) return;
+  if (hwMode.mode !== 'normal') return;
   event.preventDefault();
   system.pressKey(keyMap.get(key));
   render();
@@ -368,10 +484,53 @@ window.addEventListener('keyup', (event) => {
 });
 
 system.addEventListener('sound', (event) => {
-  setStatus(`Sound: ${event.detail}`);
+  flashBuzzer(event.detail);
+  playBuzzerSound(event.detail);
 });
 
+const EXAMPLES = [
+  {
+    title: '7セグ カウントアップ',
+    desc: '0〜F を繰り返し表示',
+    code: `TIA 0\nAIA 1\nAO\nJUMP 02`,
+  },
+  {
+    title: 'LED 順番点灯',
+    desc: 'LED 0〜6 を順に点灯',
+    code: `TIY 0\nCAL 1\nAIY 1\nCIY 7\nJUMP 02\nJUMP 00`,
+  },
+  {
+    title: 'ブザー',
+    desc: '短い音を繰り返す',
+    code: `CAL 9\nCAL C\nJUMP 00`,
+  },
+  {
+    title: '7セグ & LED',
+    desc: 'LED 番号を 7セグにも表示',
+    code: `TIY 0\nCAL 1\nCY\nAO\nCY\nAIY 1\nCIY 7\nJUMP 02\nJUMP 10`,
+  },
+];
+
+function buildExamples() {
+  const grid = document.querySelector('#examplesGrid');
+  grid.innerHTML = EXAMPLES.map((ex, i) => `
+    <button type="button" class="example-card" data-example="${i}">
+      <div class="example-title">${ex.title}</div>
+      <div class="example-desc">${ex.desc}</div>
+    </button>
+  `).join('');
+
+  grid.addEventListener('click', (event) => {
+    const card = event.target.closest('.example-card');
+    if (!card) return;
+    const ex = EXAMPLES[Number(card.dataset.example)];
+    sourceInput.value = ex.code;
+    setStatus(`${ex.title} を読み込みました`);
+  });
+}
+
 buildKeyboard();
+buildExamples();
 setSerialConnected(false);
 reset();
 
